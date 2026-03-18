@@ -31,4 +31,12 @@ impl SessionState {
       vfs: VirtualFileSystem::new(username),
     }
   }
+
+  pub fn push_history(&mut self, cmd: &str) {
+    let trimmed = cmd.trim();
+    if trimmed.is_empty() {
+      return;
+    }
+    self.history.push(trimmed.to_string());
+  }
 }
