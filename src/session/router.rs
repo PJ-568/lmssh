@@ -1,5 +1,7 @@
 use crate::session::{Action, SessionState};
 use crate::session::blacklist;
+use crate::prompt::{build_system_prompt, PromptContext};
+use crate::vfs::side_effects::apply_side_effects;
 
 #[derive(Debug, Default)]
 pub struct Router;
@@ -58,7 +60,27 @@ impl Router {
           ))
         }
       }
-      _ => Action::NoOutput,
+      _ => {
+        apply_side_effects(session.vfs_mut(), trimmed);
+
+        let ctx = PromptContext {
+          hostname: session.hostname.clone(),
+          username: session.username.clone(),
+          cwd: session.cwd.clone(),
+          client_ip: session.client_ip.clone(),
+          terminal: session.terminal.clone(),
+          term_width: session.term_width,
+          term_height: session.term_height,
+          fs_changes: "(no changes)".to_string(),
+          user_files: "(no user files)".to_string(),
+        };
+
+        let system_prompt = build_system_prompt(&ctx, &session.recent_commands);
+        Action::AiRequest {
+          system_prompt,
+          user_command: trimmed.to_string(),
+        }
+      }
     }
   }
 }

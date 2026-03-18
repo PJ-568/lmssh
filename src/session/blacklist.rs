@@ -16,5 +16,5 @@ pub const BLACKLISTED_COMMANDS: &[&str] = &[
 ];
 
 pub fn is_blacklisted(cmd0: &str) -> bool {
-  BLACKLISTED_COMMANDS.iter().any(|c| *c == cmd0)
+  BLACKLISTED_COMMANDS.contains(&cmd0)
 }
