@@ -10,6 +10,9 @@ pub enum LmsshError {
   #[error("io error: {0}")]
   Io(#[from] std::io::Error),
 
+  #[error("json error: {0}")]
+  Json(#[from] serde_json::Error),
+
   #[error("russh-keys error: {0}")]
   RusshKeys(#[from] russh::keys::Error),
 
