@@ -12,6 +12,7 @@ impl Router {
 
     match trimmed {
       "pwd" => Action::SendText(format!("{}\n", session.cwd)),
+      "clear" => Action::SendText("\x1b[2J\x1b[H".to_string()),
       "exit" | "logout" => Action::Disconnect,
       _ => Action::NoOutput,
     }
