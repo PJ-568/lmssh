@@ -10,6 +10,9 @@ use crate::error::Result;
 pub struct Config {
   pub ssh: SshConfig,
   pub openai: OpenAiConfig,
+  pub limits: LimitsConfig,
+  pub logging: LoggingConfig,
+  pub users: Vec<UserConfig>,
 }
 
 impl Config {
@@ -20,6 +23,54 @@ impl Config {
   pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self> {
     let toml_str = std::fs::read_to_string(path)?;
     Self::load_from_str(&toml_str)
+  }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct LimitsConfig {
+  pub max_output_length: usize,
+  pub max_output_lines: usize,
+  pub max_numbered_lines: usize,
+}
+
+impl Default for LimitsConfig {
+  fn default() -> Self {
+    Self {
+      max_output_length: 8192,
+      max_output_lines: 200,
+      max_numbered_lines: 15,
+    }
+  }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct LoggingConfig {
+  pub dir: String,
+}
+
+impl Default for LoggingConfig {
+  fn default() -> Self {
+    Self {
+      dir: "logs".to_string(),
+    }
+  }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct UserConfig {
+  pub username: String,
+  pub password: String,
+}
+
+impl Default for UserConfig {
+  fn default() -> Self {
+    Self {
+      username: String::new(),
+      password: String::new(),
+    }
   }
 }
 
