@@ -10,7 +10,11 @@ use tokio::sync::Mutex;
 
 use crate::config::Config;
 use crate::error::Result;
-use crate::session::{Action, Router, SessionState};
+use crate::ai::client::OpenAiClient;
+use crate::ai::types::{ChatCompletionsRequest, ChatMessage};
+use crate::logging::event::{Event, EventKind};
+use crate::logging::jsonl::JsonlLogger;
+use crate::session::{Action, CommandExecutor, OutputGuard, Router, SessionState};
 use crate::terminal::LineEditor;
 
 #[derive(Debug, Clone)]
@@ -54,9 +58,11 @@ struct Shared {
 
 struct SessionIo {
   channel: Option<ChannelId>,
+  session_id: String,
   username: String,
   state: Option<SessionState>,
   editor: LineEditor,
+  logger: Option<JsonlLogger>,
 }
 
 impl SessionIo {
@@ -64,9 +70,17 @@ impl SessionIo {
     let _ = max_input_rate;
     Self {
       channel: None,
+      session_id: format!(
+        "sess-{}",
+        std::time::SystemTime::now()
+          .duration_since(std::time::UNIX_EPOCH)
+          .map(|d| d.as_nanos())
+          .unwrap_or_default()
+      ),
       username: String::new(),
       state: None,
       editor: LineEditor::new(),
+      logger: None,
     }
   }
 }
@@ -180,11 +194,19 @@ impl russh::server::Handler for HoneypotHandler {
       .map(|a| a.ip().to_string())
       .unwrap_or_else(|| "unknown".to_string());
     io.state = Some(SessionState::new_for_test(&username, &self.shared.cfg.ssh.hostname, cwd));
+    io.logger = JsonlLogger::new(&self.shared.cfg.logging.dir, &io.session_id).ok();
     if let Some(state) = io.state.as_mut() {
       state.client_ip = client_ip;
       state.terminal = "xterm-256color".to_string();
       state.term_width = 80;
       state.term_height = 24;
+    }
+    if let Some(logger) = io.logger.as_ref() {
+      let _ = logger.log(&Event::new(
+        io.session_id.clone(),
+        now_ms(),
+        EventKind::Connected,
+      ));
     }
     drop(io);
 
@@ -210,11 +232,19 @@ impl russh::server::Handler for HoneypotHandler {
     }
 
     for cmd in commands {
-      let (response, disconnect, prompt) = {
+      let (response, disconnect, prompt, log_ai) = {
         let mut io = self.io.lock().await;
         let username = io.username.clone();
         let hostname = self.shared.cfg.ssh.hostname.clone();
         let router = Router;
+        let session_id = io.session_id.clone();
+        if let Some(logger) = io.logger.as_ref() {
+          let _ = logger.log(&Event::new(
+            session_id.clone(),
+            now_ms(),
+            EventKind::Command { input: cmd.clone() },
+          ));
+        }
         let state = io.state.as_mut().unwrap();
         state.push_history(&cmd);
         let action = router.handle_command(state, &cmd);
@@ -222,23 +252,41 @@ impl russh::server::Handler for HoneypotHandler {
         match action {
           Action::SendText(text) => {
             let prompt = build_prompt(&username, &hostname, state.cwd());
-            (text, false, prompt)
+            (text, false, prompt, None)
           }
           Action::NoOutput => {
             let prompt = build_prompt(&username, &hostname, state.cwd());
-            (String::new(), false, prompt)
+            (String::new(), false, prompt, None)
           }
-          Action::Disconnect => (String::new(), true, String::new()),
-          Action::AiRequest { .. } => {
-            let text = "bash: AI integration not wired into channel yet\n".to_string();
+          Action::Disconnect => (String::new(), true, String::new(), None),
+          Action::AiRequest {
+            system_prompt,
+            user_command,
+          } => {
+            let text = collect_ai_for_shell(&self.shared.cfg, system_prompt, user_command)
+              .await
+              .unwrap_or_else(|_| "bash: internal error: AI service unavailable\n".to_string());
             let prompt = build_prompt(&username, &hostname, state.cwd());
-            (text, false, prompt)
+            let bytes = text.len();
+            let truncated = false;
+            (text, false, prompt, Some((bytes, truncated, session_id)))
           }
         }
       };
 
       if !response.is_empty() {
         session.data(channel, CryptoVec::from_slice(response.as_bytes()));
+      }
+
+      if let Some((bytes, truncated, session_id)) = log_ai {
+        let io = self.io.lock().await;
+        if let Some(logger) = io.logger.as_ref() {
+          let _ = logger.log(&Event::new(
+            session_id,
+            now_ms(),
+            EventKind::AiResponse { bytes, truncated },
+          ));
+        }
       }
 
       if disconnect {
@@ -258,6 +306,14 @@ impl russh::server::Handler for HoneypotHandler {
     _channel: ChannelId,
     _session: &mut Session,
   ) -> std::result::Result<(), Self::Error> {
+    let io = self.io.lock().await;
+    if let Some(logger) = io.logger.as_ref() {
+      let _ = logger.log(&Event::new(
+        io.session_id.clone(),
+        now_ms(),
+        EventKind::Disconnected,
+      ));
+    }
     Ok(())
   }
 }
@@ -275,4 +331,41 @@ pub async fn run_server(cfg: &Config) -> Result<()> {
 fn build_prompt(username: &str, hostname: &str, cwd: &str) -> String {
   let suffix = if username == "root" { '#' } else { '$' };
   format!("{username}@{hostname}:{cwd}{suffix} ")
+}
+
+async fn collect_ai_for_shell(cfg: &Config, system_prompt: String, user_command: String) -> Result<String> {
+  let client = OpenAiClient::new(cfg.openai.base_url.clone(), cfg.openai.api_key.clone())?;
+  let req = ChatCompletionsRequest {
+    model: cfg.openai.model.clone(),
+    messages: vec![
+      ChatMessage {
+        role: "system".to_string(),
+        content: system_prompt,
+      },
+      ChatMessage {
+        role: "user".to_string(),
+        content: user_command,
+      },
+    ],
+    stream: true,
+    temperature: Some(cfg.openai.temperature),
+    max_tokens: Some(cfg.openai.max_tokens),
+  };
+
+  let stream = client.stream_chat(req).await?;
+  let executor = CommandExecutor::new();
+  let mut guard = OutputGuard::new(
+    cfg.limits.max_output_length,
+    cfg.limits.max_output_lines,
+    cfg.limits.max_numbered_lines,
+  );
+  let outcome = executor.collect_ai_stream(&mut guard, stream).await?;
+  Ok(outcome.output)
+}
+
+fn now_ms() -> u64 {
+  std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)
+    .map(|d| d.as_millis() as u64)
+    .unwrap_or_default()
 }

@@ -1,8 +1,10 @@
 use std::future::Future;
 
+use futures_util::StreamExt;
 use tokio::sync::Semaphore;
 
 use crate::session::OutputGuard;
+use crate::error::Result;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiChunkOutcome {
@@ -62,5 +64,32 @@ impl CommandExecutor {
     }
 
     AiChunkOutcome { output, truncated }
+  }
+
+  pub async fn collect_ai_stream<S>(&self, guard: &mut OutputGuard, mut stream: S) -> Result<AiChunkOutcome>
+  where
+    S: futures_util::Stream<Item = Result<String>> + Unpin,
+  {
+    let mut output = String::new();
+    let mut truncated = false;
+
+    while let Some(chunk) = stream.next().await {
+      let chunk = chunk?;
+      if chunk == "<NO_OUTPUT>" {
+        return Ok(AiChunkOutcome {
+          output: String::new(),
+          truncated: false,
+        });
+      }
+
+      let should_stop = guard.push(&chunk);
+      output.push_str(&chunk);
+      if should_stop {
+        truncated = true;
+        break;
+      }
+    }
+
+    Ok(AiChunkOutcome { output, truncated })
   }
 }
