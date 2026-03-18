@@ -58,20 +58,11 @@ impl Default for LoggingConfig {
   }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 pub struct UserConfig {
   pub username: String,
   pub password: String,
-}
-
-impl Default for UserConfig {
-  fn default() -> Self {
-    Self {
-      username: String::new(),
-      password: String::new(),
-    }
-  }
 }
 
 pub fn default_config_path() -> PathBuf {
