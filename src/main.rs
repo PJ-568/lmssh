@@ -10,19 +10,23 @@ struct Args {
   config: Option<PathBuf>,
 }
 
-fn main() {
-  if let Err(err) = run() {
+#[tokio::main]
+async fn main() {
+  if let Err(err) = run().await {
     eprintln!("{err}");
     std::process::exit(1);
   }
 }
 
-fn run() -> lmssh::error::Result<()> {
+async fn run() -> lmssh::error::Result<()> {
   let args = Args::parse();
 
   let config_path = args
     .config
     .unwrap_or_else(lmssh::config::default_config_path);
-  let _cfg = lmssh::config::Config::load_from_path(config_path)?;
+  let cfg = lmssh::config::Config::load_from_path(config_path)?;
+
+  // Task 2：先打通 main 到 server 的调用链；server 先为空实现。
+  lmssh::ssh::server::run_server(&cfg).await?;
   Ok(())
 }
