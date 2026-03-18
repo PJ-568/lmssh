@@ -1,5 +1,8 @@
 use serde::Deserialize;
 
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+
 use crate::error::Result;
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -13,6 +16,34 @@ impl Config {
   pub fn load_from_str(toml_str: &str) -> Result<Self> {
     Ok(toml::from_str(toml_str)?)
   }
+
+  pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self> {
+    let toml_str = std::fs::read_to_string(path)?;
+    Self::load_from_str(&toml_str)
+  }
+}
+
+pub fn default_config_path() -> PathBuf {
+  default_config_path_from_env(|k| std::env::var_os(k))
+}
+
+fn default_config_path_from_env<F>(mut get_env: F) -> PathBuf
+where
+  F: FnMut(&str) -> Option<OsString>,
+{
+  if let Some(xdg) = get_env("XDG_CONFIG_HOME") {
+    return PathBuf::from(xdg).join("lmssh").join("config.toml");
+  }
+
+  if let Some(home) = get_env("HOME") {
+    return PathBuf::from(home)
+      .join(".config")
+      .join("lmssh")
+      .join("config.toml");
+  }
+
+  // 极端情况下环境变量缺失，退化为当前目录。
+  PathBuf::from("config.toml")
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -58,5 +89,36 @@ impl Default for OpenAiConfig {
       max_tokens: 512,
       temperature: 0.6,
     }
+  }
+}
+
+#[cfg(test)]
+mod default_path_tests {
+  use super::*;
+
+  #[test]
+  fn default_config_path_prefers_xdg() {
+    let p = default_config_path_from_env(|k| match k {
+      "XDG_CONFIG_HOME" => Some("/tmp/xdg".into()),
+      "HOME" => Some("/home/test".into()),
+      _ => None,
+    });
+    assert_eq!(p, PathBuf::from("/tmp/xdg/lmssh/config.toml"));
+  }
+
+  #[test]
+  fn default_config_path_falls_back_to_home() {
+    let p = default_config_path_from_env(|k| match k {
+      "XDG_CONFIG_HOME" => None,
+      "HOME" => Some("/home/test".into()),
+      _ => None,
+    });
+    assert_eq!(p, PathBuf::from("/home/test/.config/lmssh/config.toml"));
+  }
+
+  #[test]
+  fn default_config_path_falls_back_to_cwd() {
+    let p = default_config_path_from_env(|_| None);
+    assert_eq!(p, PathBuf::from("config.toml"));
   }
 }
