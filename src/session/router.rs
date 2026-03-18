@@ -1,4 +1,5 @@
 use crate::session::{Action, SessionState};
+use crate::session::blacklist;
 
 #[derive(Debug, Default)]
 pub struct Router;
@@ -8,6 +9,11 @@ impl Router {
     let trimmed = cmd.trim();
     if trimmed.is_empty() {
       return Action::NoOutput;
+    }
+
+    let cmd0 = trimmed.split_whitespace().next().unwrap_or("");
+    if blacklist::is_blacklisted(cmd0) {
+      return Action::SendText(format!("bash: {cmd0}: command not found\n"));
     }
 
     match trimmed {

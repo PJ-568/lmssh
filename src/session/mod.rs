@@ -1,4 +1,5 @@
 pub mod action;
+pub mod blacklist;
 pub mod router;
 pub mod session;
 
