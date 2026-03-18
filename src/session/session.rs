@@ -39,4 +39,8 @@ impl SessionState {
     }
     self.history.push(trimmed.to_string());
   }
+
+  pub fn cwd(&self) -> &str {
+    &self.cwd
+  }
 }

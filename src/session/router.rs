@@ -22,7 +22,68 @@ impl Router {
         }
         Action::SendText(out)
       }
+      _ if trimmed == "cd" || trimmed.starts_with("cd ") => {
+        let arg = trimmed.strip_prefix("cd").unwrap().trim();
+        let target = if arg.is_empty() {
+          // home
+          if session.username == "root" {
+            "/root".to_string()
+          } else {
+            format!("/home/{}", session.username)
+          }
+        } else if arg.starts_with('/') {
+          normalize_path(arg)
+        } else {
+          let base = if session.cwd == "/" {
+            format!("/{}", arg)
+          } else {
+            format!("{}/{}", session.cwd, arg)
+          };
+          normalize_path(&base)
+        };
+
+        if session.vfs.is_dir(&target) {
+          session.cwd = target;
+          Action::NoOutput
+        } else {
+          Action::SendText(format!(
+            "bash: cd: {}: No such file or directory\n",
+            target
+          ))
+        }
+      }
       _ => Action::NoOutput,
     }
   }
+}
+
+fn normalize_path(path: &str) -> String {
+  let raw = if path.is_empty() { "/" } else { path };
+  let raw = if raw.starts_with('/') {
+    raw.to_string()
+  } else {
+    format!("/{raw}")
+  };
+
+  let mut stack: Vec<&str> = vec![];
+  for part in raw.split('/') {
+    if part.is_empty() || part == "." {
+      continue;
+    }
+    if part == ".." {
+      stack.pop();
+      continue;
+    }
+    stack.push(part);
+  }
+
+  if stack.is_empty() {
+    return "/".to_string();
+  }
+  let mut out = String::new();
+  for seg in stack {
+    out.push('/');
+    out.push_str(seg);
+  }
+  out
 }
