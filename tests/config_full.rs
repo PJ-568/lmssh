@@ -2,7 +2,7 @@ use lmssh::config::Config;
 
 #[test]
 fn load_full_config() {
-  let toml = r#"
+    let toml = r#"
     [ssh]
     listen_addr = "127.0.0.1:2222"
     hostname = "debian"
@@ -22,7 +22,7 @@ fn load_full_config() {
 
     [openai]
     api_key = "sk-test"
-    base_url = "https://api.openai.com"
+    base_url = "https://api.openai.com/v1"
     model = "gpt-4o-mini"
     max_tokens = 512
     temperature = 0.6
@@ -31,8 +31,8 @@ fn load_full_config() {
     dir = "logs"
   "#;
 
-  let cfg = Config::load_from_str(toml).unwrap();
-  assert_eq!(cfg.users.len(), 1);
-  assert_eq!(cfg.limits.max_output_lines, 200);
-  assert_eq!(cfg.logging.dir, "logs");
+    let cfg = Config::load_from_str(toml).unwrap();
+    assert_eq!(cfg.users.len(), 1);
+    assert_eq!(cfg.limits.max_output_lines, 200);
+    assert_eq!(cfg.logging.dir, "logs");
 }

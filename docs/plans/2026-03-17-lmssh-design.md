@@ -14,9 +14,9 @@
 - 内建命令（不走 AI）：`cd` / `pwd` / `clear` / `history` / `exit` / `logout`。
 - 拦截交互式 TUI 命令黑名单（如 `vim` / `top` / `tmux` 等），返回 `bash: <cmd>: command not found`。
 - 其余命令：
-  1) 对虚拟文件系统（VFS）做“副作用模拟”（mkdir/touch/rm/重定向创建文件等）；
-  2) 组装 system prompt（仿 Debian 12 终端语气与约束）；
-  3) 调用 OpenAI 兼容接口 `/v1/chat/completions`，以 SSE 流式返回输出。
+  1. 对虚拟文件系统（VFS）做“副作用模拟”（mkdir/touch/rm/重定向创建文件等）；
+  2. 组装 system prompt（仿 Debian 12 终端语气与约束）；
+  3. 调用 OpenAI 兼容接口 `/chat/completions`，以 SSE 流式返回输出。
 - 输出防失控：最大字节、最大行数、连续编号行限制（参考 reference 的策略）。
 - 会话日志：按 session 输出 JSONL 文件，记录连接、认证、命令、AI 输出、断开等事件。
 
@@ -81,7 +81,7 @@ password = "password"
 
 [openai]
 api_key = "sk-..."
-base_url = "https://api.openai.com"
+base_url = "https://api.openai.com/v1"
 model = "gpt-4o-mini"
 max_tokens = 512
 temperature = 0.6
@@ -143,7 +143,7 @@ dir = "logs"
 
 ### 7.1 接口
 
-- `POST {openai.base_url}/v1/chat/completions`
+- `POST {openai.base_url}/chat/completions`
 - headers：`Authorization: Bearer <api_key>`
 - body：`model`、`messages`、`stream=true`、`temperature`、`max_tokens`
 

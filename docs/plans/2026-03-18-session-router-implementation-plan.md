@@ -5,6 +5,7 @@
 **Goal:** 引入会话状态与命令路由：内建命令（cd/pwd/clear/history/exit/logout）、黑名单拦截、其余命令走 VFS 副作用 + system prompt + OpenAI SSE。
 
 **Architecture:**
+
 - 新增 `session` 模块：`SessionState` 保存会话状态；`Router` 纯逻辑产出 `Action`（不直接做 IO）。
 - 由上层（未来的 SSH glue）执行 `Action`：写回输出、断开连接、或调用 AI 流式并套上输出防护。
 
@@ -24,6 +25,7 @@
 ### Task 1: 定义 session action 与 session state 骨架
 
 **Files:**
+
 - Create: `src/session/mod.rs`
 - Create: `src/session/action.rs`
 - Create: `src/session/session.rs`
@@ -83,6 +85,7 @@ Commit message:
 ### Task 2: Router - 内建命令 pwd / exit / logout
 
 **Files:**
+
 - Create: `src/session/router.rs`
 - Modify: `src/session/mod.rs`
 - Test: `tests/router_builtins_basic.rs`
@@ -141,6 +144,7 @@ Expected: PASS
 ### Task 3: Router - 内建命令 clear
 
 **Files:**
+
 - Modify: `src/session/router.rs`
 - Test: `tests/router_clear.rs`
 
@@ -185,6 +189,7 @@ Expected: PASS
 ### Task 4: Router - 内建命令 history（形似 bash）
 
 **Files:**
+
 - Modify: `src/session/router.rs`
 - Modify: `src/session/session.rs`
 - Test: `tests/router_history.rs`
@@ -235,6 +240,7 @@ Expected: PASS
 ### Task 5: Router - 内建命令 cd（含相对路径与错误）
 
 **Files:**
+
 - Modify: `src/session/router.rs`
 - Modify: `src/session/session.rs`
 - Modify: `src/vfs/tree.rs`（如需要：暴露 path resolve helper；优先不改）
@@ -297,6 +303,7 @@ Expected: PASS
 ### Task 6: Router - 黑名单命令返回 command not found
 
 **Files:**
+
 - Modify: `src/session/router.rs`
 - Create: `src/session/blacklist.rs`
 - Modify: `src/session/mod.rs`
@@ -342,6 +349,7 @@ Expected: PASS
 ### Task 7: Router - 非内建/非黑名单：VFS 副作用 + prompt + AiRequest
 
 **Files:**
+
 - Modify: `src/session/router.rs`
 - Modify: `src/session/session.rs`
 - Test: `tests/router_ai_request.rs`
@@ -364,7 +372,7 @@ fn other_command_produces_ai_request_and_applies_vfs_side_effects() {
   let Action::AiRequest { system_prompt, user_command } = act else {
     panic!("expected AiRequest");
   };
-  assert!(system_prompt.contains("禁止markdown"));
+  assert!(system_prompt.contains("禁止 markdown"));
   assert_eq!(user_command, "echo hi > /tmp/out.txt");
 }
 ```
@@ -398,6 +406,7 @@ Expected: PASS
 ### Task 8: Output guard（bytes/lines/连续编号行）
 
 **Files:**
+
 - Create: `src/session/output_guard.rs`
 - Modify: `src/session/mod.rs`
 - Test: `tests/output_guard.rs`

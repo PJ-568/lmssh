@@ -5,6 +5,7 @@
 **Goal:** 让 `lmssh` 成为可运行的 SSH 蜜罐：password 登录、交互式 shell、命令路由（内建/黑名单/AI）、AI 输出防护、JSONL 会话日志。
 
 **Architecture:**
+
 - 用 `russh` 实现 server + per-connection handler。
 - 每个 session 持有 `SessionState + LineEditor`；输入可持续处理并允许排队命令。
 - 每次回车生成命令后进入一个 async 任务：获取 `output_lock`，执行 Router Action；若是 AI，则流式输出并套 `OutputGuard`。
@@ -23,6 +24,7 @@
 ### Task 1: 补齐 Config 结构（limits/users/logging）
 
 **Files:**
+
 - Modify: `src/config.rs`
 - Test: `tests/config_full.rs`
 
@@ -55,7 +57,7 @@ fn load_full_config() {
 
     [openai]
     api_key = "sk-test"
-    base_url = "https://api.openai.com"
+    base_url = "https://api.openai.com/v1"
     model = "gpt-4o-mini"
     max_tokens = 512
     temperature = 0.6
@@ -97,6 +99,7 @@ Expected: PASS
 ### Task 2: 运行时入口 main：读取 config + 初始化 hostkey + 启动 server
 
 **Files:**
+
 - Modify: `src/main.rs`
 - Create: `src/ssh/server.rs`
 - Modify: `src/ssh/mod.rs`
@@ -145,6 +148,7 @@ Expected: PASS
 ### Task 3: russh Server/Handler：password auth + 拒绝 publickey
 
 **Files:**
+
 - Modify: `src/ssh/server.rs`
 - Test: `tests/auth_logic.rs`
 
@@ -192,6 +196,7 @@ Expected: PASS
 ### Task 4: 交互式 shell：LineEditor -> Router -> Action 执行（支持命令排队）
 
 **Files:**
+
 - Modify: `src/ssh/server.rs`
 - Create: `src/session/executor.rs`
 - Modify: `src/session/mod.rs`
@@ -241,6 +246,7 @@ Expected: PASS
 ### Task 5: AI 输出串流：接入 OpenAiClient + OutputGuard + <NO_OUTPUT>
 
 **Files:**
+
 - Modify: `src/session/executor.rs`
 - Modify: `src/ai/client.rs`
 - Test: `tests/output_guard_integration.rs`
@@ -279,4 +285,4 @@ cargo run -- -c config.toml
 ssh root@127.0.0.1 -p 2222
 ```
 
-检查：pwd/cd/history/clear/exit、黑名单、AI 命令输出、logs/session_*.jsonl。
+检查：pwd/cd/history/clear/exit、黑名单、AI 命令输出、logs/session\_\*.jsonl。

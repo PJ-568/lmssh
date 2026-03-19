@@ -1,6 +1,6 @@
 #[test]
 fn load_config_from_toml_str() {
-  let toml = r#"
+    let toml = r#"
     [ssh]
     listen_addr = "127.0.0.1:2222"
     hostname = "debian"
@@ -9,9 +9,9 @@ fn load_config_from_toml_str() {
 
     [openai]
     api_key = "sk-test"
-    base_url = "https://api.openai.com"
+    base_url = "https://api.openai.com/v1"
     model = "gpt-4o-mini"
   "#;
-  let cfg = lmssh::config::Config::load_from_str(toml).unwrap();
-  assert_eq!(cfg.ssh.hostname, "debian");
+    let cfg = lmssh::config::Config::load_from_str(toml).unwrap();
+    assert_eq!(cfg.ssh.hostname, "debian");
 }

@@ -2,12 +2,20 @@
 name = "lmssh"
 version = "0.1.0"
 edition = "2024"
+authors = ["PJ568"]
+description = "An SSH honeypot server with AI-generated shell responses for security research and monitoring"
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/PJ-568/lmssh"
+homepage = "https://github.com/PJ-568/lmssh"
+keywords = ["ssh", "honeypot", "security", "shell", "openai"]
+categories = ["network-programming", "command-line-utilities"]
 
 [dependencies]
 async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
 rand_core = "0.6"
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.13", features = ["json", "stream"] }
 russh = { version = "0.45" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -17,7 +25,7 @@ eventsource-stream = "0.2.3"
 futures-util = "0.3"
 tokio = { version = "1", features = ["rt", "macros", "sync"] }
 tokio-stream = "0.1"
-toml = "0.8"
+toml = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

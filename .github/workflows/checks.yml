@@ -1,0 +1,56 @@
+name: Checks
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  fomat-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: AutoCorrect
+        uses: huacnlee/autocorrect-action@v2
+
+      - name: Report ReviewDog
+        if: failure()
+        uses: huacnlee/autocorrect-action@v2
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          reviewdog: true
+
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: MatteoH2O1999/setup-rust@v1
+        with:
+          toolchain: stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check code formatting
+        run: cargo fmt --all -- --check
+
+      - name: Check project
+        run: cargo check --all-targets
+
+      - name: Clippy project
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test project
+        run: cargo test --all-targets
+
+      - name: Check documentation
+        run: cargo doc --no-deps --document-private-items
+        env:
+          RUSTDOCFLAGS: -D warnings

@@ -1,0 +1,75 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    name: Release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check version
+        id: version-check
+        run: |
+          git fetch --tags --force
+          VERSION=$(./scripts/is-newer-version.bash)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [ "$VERSION" != "0" ]; then
+            echo "New version detected: $VERSION"
+          else
+            echo "No new version to release"
+          fi
+
+      - name: Push tag
+        if: steps.version-check.outputs.version != '0'
+        id: push-tag
+        run: |
+          tag="v${{ steps.version-check.outputs.version }}"
+          git tag -a "${tag}" -m "Release ${tag}"
+          git push origin "${tag}"
+          echo "tag_name=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Rust
+        if: steps.version-check.outputs.version != '0'
+        uses: MatteoH2O1999/setup-rust@v1
+        with:
+          toolchain: stable
+
+      - name: Cache Rust dependencies
+        if: steps.version-check.outputs.version != '0'
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: "true"
+
+      - name: Build project
+        if: steps.version-check.outputs.version != '0'
+        run: cargo build --release
+
+      - name: Publish project
+        if: steps.version-check.outputs.version != '0'
+        run: |
+          ./scripts/publish-crates-io.bash -n ${{ secrets.CRATES_IO_TOKEN }}  # Dry run check
+          ./scripts/publish-crates-io.bash -y ${{ secrets.CRATES_IO_TOKEN }}  # Actual publish with auto-confirm
+        shell: bash
+
+      - name: Create release
+        if: steps.version-check.outputs.version != '0'
+        uses: ncipollo/release-action@v1
+        with:
+          generateReleaseNotes: true
+          tag: "v${{ steps.version-check.outputs.version }}"
+          artifacts: ./target/release/lmssh
+
+      - name: Delete tag if failure or cancelled
+        if: (cancelled() || failure()) && steps.push-tag.outputs.tag_name != ''
+        run: |
+          git push --delete origin "${{ steps.push-tag.outputs.tag_name }}" || true
+          git tag -d "${{ steps.push-tag.outputs.tag_name }}"
