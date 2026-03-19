@@ -36,7 +36,7 @@ impl OpenAiClient {
       HeaderValue::from_str(&format!("Bearer {}", self.api_key)).unwrap(),
     );
 
-    let url = format!("{}/v1/chat/completions", self.base_url.trim_end_matches('/'));
+    let url = chat_completions_url(&self.base_url);
     let resp = self
       .http
       .post(url)
@@ -121,6 +121,10 @@ impl OpenAiClient {
   }
 }
 
+fn chat_completions_url(base_url: &str) -> String {
+  format!("{}/chat/completions", base_url.trim_end_matches('/'))
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -137,5 +141,13 @@ mod tests {
     let s = std::str::from_utf8(rest).unwrap();
     let chunk: ChatCompletionsChunk = serde_json::from_str(s).unwrap();
     assert_eq!(chunk.choices[0].delta.content.as_deref(), Some("hi"));
+  }
+
+  #[test]
+  fn chat_completion_url_uses_provider_base_path() {
+    assert_eq!(
+      chat_completions_url("https://api.pj568.eu.org/proxy/wasteest-source"),
+      "https://api.pj568.eu.org/proxy/wasteest-source/chat/completions"
+    );
   }
 }

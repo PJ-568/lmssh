@@ -85,6 +85,13 @@ impl SessionIo {
   }
 }
 
+fn ensure_logger<'a>(io: &'a mut SessionIo, dir: &str) -> Option<&'a JsonlLogger> {
+  if io.logger.is_none() {
+    io.logger = JsonlLogger::new(dir, &io.session_id).ok();
+  }
+  io.logger.as_ref()
+}
+
 impl russh::server::Server for HoneypotServer {
   type Handler = HoneypotHandler;
 
@@ -125,8 +132,31 @@ impl russh::server::Handler for HoneypotHandler {
     if check_password(&users, user, password) {
       let mut io = self.io.lock().await;
       io.username = user.to_string();
+      let session_id = io.session_id.clone();
+      let log_dir = self.shared.cfg.logging.dir.clone();
+      if let Some(logger) = ensure_logger(&mut io, &log_dir) {
+        let _ = logger.log(&Event::new(
+          session_id,
+          now_ms(),
+          EventKind::AuthSuccess {
+            username: user.to_string(),
+          },
+        ));
+      }
       Ok(Auth::Accept)
     } else {
+      let mut io = self.io.lock().await;
+      let session_id = io.session_id.clone();
+      let log_dir = self.shared.cfg.logging.dir.clone();
+      if let Some(logger) = ensure_logger(&mut io, &log_dir) {
+        let _ = logger.log(&Event::new(
+          session_id,
+          now_ms(),
+          EventKind::AuthFailed {
+            username: user.to_string(),
+          },
+        ));
+      }
       Ok(Auth::Reject {
         proceed_with_methods: Some(MethodSet::PASSWORD),
       })
@@ -150,6 +180,11 @@ impl russh::server::Handler for HoneypotHandler {
   ) -> std::result::Result<bool, Self::Error> {
     let mut io = self.io.lock().await;
     io.channel = Some(channel.id());
+    let session_id = io.session_id.clone();
+    let log_dir = self.shared.cfg.logging.dir.clone();
+    if let Some(logger) = ensure_logger(&mut io, &log_dir) {
+      let _ = logger.log(&Event::new(session_id, now_ms(), EventKind::Connected));
+    }
     Ok(true)
   }
 
@@ -194,24 +229,89 @@ impl russh::server::Handler for HoneypotHandler {
       .map(|a| a.ip().to_string())
       .unwrap_or_else(|| "unknown".to_string());
     io.state = Some(SessionState::new_for_test(&username, &self.shared.cfg.ssh.hostname, cwd));
-    io.logger = JsonlLogger::new(&self.shared.cfg.logging.dir, &io.session_id).ok();
     if let Some(state) = io.state.as_mut() {
       state.client_ip = client_ip;
       state.terminal = "xterm-256color".to_string();
       state.term_width = 80;
       state.term_height = 24;
     }
-    if let Some(logger) = io.logger.as_ref() {
-      let _ = logger.log(&Event::new(
-        io.session_id.clone(),
-        now_ms(),
-        EventKind::Connected,
-      ));
-    }
     drop(io);
 
     let prompt = build_prompt(&username, &self.shared.cfg.ssh.hostname, cwd);
     session.data(channel, CryptoVec::from_slice(prompt.as_bytes()));
+    Ok(())
+  }
+
+  async fn exec_request(
+    &mut self,
+    channel: ChannelId,
+    data: &[u8],
+    session: &mut Session,
+  ) -> std::result::Result<(), Self::Error> {
+    let command = String::from_utf8_lossy(data).to_string();
+
+    let (response, disconnect) = {
+      let mut io = self.io.lock().await;
+      let username = if io.username.is_empty() {
+        "root".to_string()
+      } else {
+        io.username.clone()
+      };
+      if io.state.is_none() {
+        let cwd = if username == "root" { "/root" } else { "/home/user" };
+        io.state = Some(SessionState::new_for_test(&username, &self.shared.cfg.ssh.hostname, cwd));
+      }
+
+      let session_id = io.session_id.clone();
+      if let Some(logger) = io.logger.as_ref() {
+        let _ = logger.log(&Event::new(
+          session_id.clone(),
+          now_ms(),
+          EventKind::Command {
+            input: command.clone(),
+          },
+        ));
+      }
+
+      let router = Router;
+      let state = io.state.as_mut().unwrap();
+      state.push_history(&command);
+      let action = router.handle_command(state, &command);
+      match action {
+        Action::SendText(text) => (text, false),
+        Action::NoOutput => (String::new(), false),
+        Action::Disconnect => (String::new(), true),
+        Action::AiRequest {
+          system_prompt,
+          user_command,
+        } => {
+          let text = collect_ai_for_shell(&self.shared.cfg, system_prompt, user_command)
+            .await
+            .unwrap_or_else(|_| "bash: internal error: AI service unavailable\n".to_string());
+          let bytes = text.len();
+          if let Some(logger) = io.logger.as_ref() {
+            let _ = logger.log(&Event::new(
+              session_id,
+              now_ms(),
+              EventKind::AiResponse {
+                bytes,
+                truncated: false,
+              },
+            ));
+          }
+          (text, false)
+        }
+      }
+    };
+
+    if !response.is_empty() {
+      session.data(channel, CryptoVec::from_slice(response.as_bytes()));
+    }
+    session.eof(channel);
+    session.close(channel);
+    if disconnect {
+      return Ok(());
+    }
     Ok(())
   }
 

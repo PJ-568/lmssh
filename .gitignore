@@ -2,3 +2,6 @@
 /reference
 /.worktrees
 /worktrees
+/config.toml
+/data
+/logs
